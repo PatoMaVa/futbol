@@ -1,11 +1,25 @@
 {
-  "name": "Fútbol - Resultados y clasificaciones",
+  "name": "Fútbol - Resultados y estadísticas",
   "short_name": "Fútbol",
-  "description": "Resultados, clasificaciones y goleadores de España, Inglaterra, Italia y Francia",
+  "description": "Resultados, clasificaciones y estadísticas de LaLiga, Premier League, Serie A y Ligue 1",
   "start_url": "/futbol/",
   "scope": "/futbol/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#f8fafc",
   "theme_color": "#166534",
-  "orientation": "portrait-primary"
+  "icons": [
+    {
+      "src": "/futbol/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/futbol/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
 }

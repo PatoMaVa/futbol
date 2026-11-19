@@ -14,10 +14,6 @@ import {
   RefreshCw,
   Shield,
   Square,
-  Trophy,
-  UserRound,
-  Users,
-  Whistle,
 } from "lucide-react";
 
 const DATA_URL =
@@ -1082,10 +1078,10 @@ function MatchDetail({
 
             {referee && (
               <div className="flex items-start gap-3">
-                <Whistle
-                  size={18}
-                  className="mt-0.5 text-emerald-700"
-                />
+              <Shield
+  size={18}
+  className="mt-0.5 text-emerald-700"
+/>
 
                 <div>
                   <div className="text-sm font-bold">

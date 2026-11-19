@@ -27,21 +27,40 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Download football data
+      - name: Download football data and match events
         env:
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+          PITCH_API_KEY: ${{ secrets.PITCH_API_KEY }}
         run: |
           python <<'PYTHON'
           import json
           import os
+          import re
           import time
+          import unicodedata
           import urllib.error
+          import urllib.parse
           import urllib.request
+
           from datetime import datetime, timezone
+          from difflib import SequenceMatcher
           from pathlib import Path
 
-          API = "https://api.football-data.org/v4"
-          TOKEN = os.environ["FOOTBALL_DATA_TOKEN"]
+          FOOTBALL_API = (
+              "https://api.football-data.org/v4"
+          )
+
+          PITCH_API = (
+              "https://api.pitchapi.dev/v1"
+          )
+
+          FOOTBALL_TOKEN = os.environ[
+              "FOOTBALL_DATA_TOKEN"
+          ]
+
+          PITCH_TOKEN = os.environ[
+              "PITCH_API_KEY"
+          ]
 
           COMPETITIONS = [
               "PD",
@@ -50,13 +69,16 @@ jobs:
               "FL1",
           ]
 
-          OUTPUT = Path("public/data/index.json")
+          OUTPUT = Path(
+              "public/data/index.json"
+          )
+
           OUTPUT.parent.mkdir(
               parents=True,
               exist_ok=True,
           )
 
-          existing_details = {}
+          previous_data = {}
 
           if OUTPUT.exists():
               try:
@@ -64,19 +86,9 @@ jobs:
                       "r",
                       encoding="utf-8",
                   ) as file:
-                      previous_data = json.load(file)
-
-                  existing_details = (
-                      previous_data.get(
-                          "matchDetails",
-                          {},
+                      previous_data = json.load(
+                          file
                       )
-                  )
-
-                  print(
-                      "Existing match details:",
-                      len(existing_details),
-                  )
 
               except Exception as error:
                   print(
@@ -84,25 +96,186 @@ jobs:
                       error,
                   )
 
-          def get_json(path):
-              url = f"{API}{path}"
+          previous_match_details = (
+              previous_data.get(
+                  "matchDetails",
+                  {},
+              )
+          )
 
-              print(f"Downloading {url}")
+          previous_pitch_events = (
+              previous_data.get(
+                  "pitchEvents",
+                  {},
+              )
+          )
 
-              request = urllib.request.Request(
-                  url,
-                  headers={
-                      "X-Auth-Token": TOKEN,
-                      "Accept": "application/json",
-                      "User-Agent": (
-                          "FootballGitHubApp/2.0"
-                      ),
-                  },
+          def normalize_text(value):
+              value = str(
+                  value or ""
+              )
+
+              value = unicodedata.normalize(
+                  "NFD",
+                  value,
+              )
+
+              value = "".join(
+                  character
+                  for character in value
+                  if unicodedata.category(
+                      character
+                  ) != "Mn"
+              )
+
+              value = value.lower()
+
+              replacements = {
+                  "&": " and ",
+                  "utd": "united",
+                  "man utd": (
+                      "manchester united"
+                  ),
+                  "man city": (
+                      "manchester city"
+                  ),
+                  "inter milan": (
+                      "internazionale"
+                  ),
+                  "inter": (
+                      "internazionale"
+                  ),
+                  "ac milan": "milan",
+                  "psg": (
+                      "paris saint germain"
+                  ),
+                  "atleti": (
+                      "atletico madrid"
+                  ),
+                  "athletic club": (
+                      "athletic bilbao"
+                  ),
+                  "real betis balompie": (
+                      "real betis"
+                  ),
+                  "rcd espanyol": (
+                      "espanyol"
+                  ),
+                  "deportivo alaves": (
+                      "alaves"
+                  ),
+                  "rc celta": (
+                      "celta vigo"
+                  ),
+                  "hellas verona": (
+                      "verona"
+                  ),
+                  "olympique lyonnais": (
+                      "lyon"
+                  ),
+                  "olympique de marseille": (
+                      "marseille"
+                  ),
+              }
+
+              for old, new in (
+                  replacements.items()
+              ):
+                  value = value.replace(
+                      old,
+                      new,
+                  )
+
+              value = re.sub(
+                  r"\b("
+                  r"fc|cf|ac|sc|afc|"
+                  r"football club|"
+                  r"calcio|club de futbol"
+                  r")\b",
+                  " ",
+                  value,
+              )
+
+              value = re.sub(
+                  r"[^a-z0-9]+",
+                  " ",
+                  value,
+              )
+
+              return re.sub(
+                  r"\s+",
+                  " ",
+                  value,
+              ).strip()
+
+          def similarity(first, second):
+              first_normalized = (
+                  normalize_text(first)
+              )
+
+              second_normalized = (
+                  normalize_text(second)
+              )
+
+              if (
+                  not first_normalized
+                  or not second_normalized
+              ):
+                  return 0
+
+              if (
+                  first_normalized
+                  == second_normalized
+              ):
+                  return 1
+
+              if (
+                  first_normalized
+                  in second_normalized
+                  or second_normalized
+                  in first_normalized
+              ):
+                  return 0.93
+
+              return SequenceMatcher(
+                  None,
+                  first_normalized,
+                  second_normalized,
+              ).ratio()
+
+          def football_get(path):
+              url = (
+                  f"{FOOTBALL_API}{path}"
+              )
+
+              print(
+                  f"football-data.org: {url}"
+              )
+
+              request = (
+                  urllib.request.Request(
+                      url,
+                      headers={
+                          "X-Auth-Token": (
+                              FOOTBALL_TOKEN
+                          ),
+                          "Accept": (
+                              "application/json"
+                          ),
+                          "User-Agent": (
+                              "FootballGitHubApp/"
+                              "3.0"
+                          ),
+                      },
+                  )
               )
 
               last_error = None
 
-              for attempt in range(1, 4):
+              for attempt in range(
+                  1,
+                  4,
+              ):
                   try:
                       with urllib.request.urlopen(
                           request,
@@ -111,9 +284,14 @@ jobs:
                           result = json.loads(
                               response
                               .read()
-                              .decode("utf-8")
+                              .decode(
+                                  "utf-8"
+                              )
                           )
 
+                      # El plan gratuito permite
+                      # aproximadamente 10 llamadas
+                      # por minuto.
                       time.sleep(7)
 
                       return result
@@ -122,8 +300,8 @@ jobs:
                       last_error = error
 
                       print(
-                          f"HTTP {error.code} "
-                          f"on attempt {attempt}"
+                          "football-data.org "
+                          f"HTTP {error.code}"
                       )
 
                       if error.code == 429:
@@ -134,24 +312,105 @@ jobs:
                   except Exception as error:
                       last_error = error
 
-                      print(
-                          f"Attempt {attempt} failed:",
-                          error,
-                      )
-
                       if attempt < 3:
                           time.sleep(15)
 
               raise RuntimeError(
-                  f"Could not download {url}: "
+                  "football-data.org "
+                  f"failed: {last_error}"
+              )
+
+          def pitch_get(path):
+              url = (
+                  f"{PITCH_API}{path}"
+              )
+
+              print(
+                  f"PitchAPI: {url}"
+              )
+
+              request = (
+                  urllib.request.Request(
+                      url,
+                      headers={
+                          "X-API-KEY": (
+                              PITCH_TOKEN
+                          ),
+                          "Accept": (
+                              "application/json"
+                          ),
+                          "User-Agent": (
+                              "FootballGitHubApp/"
+                              "3.0"
+                          ),
+                      },
+                  )
+              )
+
+              last_error = None
+
+              for attempt in range(
+                  1,
+                  4,
+              ):
+                  try:
+                      with urllib.request.urlopen(
+                          request,
+                          timeout=60,
+                      ) as response:
+                          result = json.loads(
+                              response
+                              .read()
+                              .decode(
+                                  "utf-8"
+                              )
+                          )
+
+                      time.sleep(0.5)
+
+                      return result
+
+                  except urllib.error.HTTPError as error:
+                      last_error = error
+
+                      print(
+                          "PitchAPI "
+                          f"HTTP {error.code}"
+                      )
+
+                      if error.code == 429:
+                          retry_after = int(
+                              error.headers.get(
+                                  "Retry-After",
+                                  "10",
+                              )
+                          )
+
+                          time.sleep(
+                              retry_after
+                          )
+
+                      elif attempt < 3:
+                          time.sleep(5)
+
+                  except Exception as error:
+                      last_error = error
+
+                      if attempt < 3:
+                          time.sleep(5)
+
+              raise RuntimeError(
+                  f"PitchAPI failed: "
                   f"{last_error}"
               )
 
-          def matchday_status(matches):
+          def matchday_summary(matches):
               summary = {}
 
               for match in matches:
-                  matchday = match.get("matchday")
+                  matchday = match.get(
+                      "matchday"
+                  )
 
                   if matchday is None:
                       continue
@@ -166,8 +425,13 @@ jobs:
                       },
                   )
 
-                  status = match.get("status")
-                  item = summary[matchday]
+                  item = summary[
+                      matchday
+                  ]
+
+                  status = match.get(
+                      "status"
+                  )
 
                   item["total"] += 1
 
@@ -189,10 +453,14 @@ jobs:
 
               return summary
 
-          def get_last_matchday(matches):
-              summary = matchday_status(matches)
+          def find_last_matchday(matches):
+              summary = (
+                  matchday_summary(
+                      matches
+                  )
+              )
 
-              finished_matchdays = [
+              completed = [
                   matchday
                   for matchday, item
                   in summary.items()
@@ -203,38 +471,46 @@ jobs:
                   )
               ]
 
-              if finished_matchdays:
-                  return max(finished_matchdays)
+              if completed:
+                  return max(completed)
 
-              any_finished = [
+              partially_completed = [
                   match.get("matchday")
                   for match in matches
                   if (
                       match.get("status")
                       == "FINISHED"
-                      and match.get("matchday")
+                      and match.get(
+                          "matchday"
+                      )
                       is not None
                   )
               ]
 
               return (
-                  max(any_finished)
-                  if any_finished
+                  max(
+                      partially_completed
+                  )
+                  if partially_completed
                   else None
               )
 
-          def get_next_matchday(
+          def find_next_matchday(
               matches,
               current_matchday,
           ):
-              upcoming_matchdays = sorted(
+              upcoming = sorted(
                   {
                       match.get("matchday")
                       for match in matches
                       if (
-                          match.get("matchday")
+                          match.get(
+                              "matchday"
+                          )
                           is not None
-                          and match.get("status")
+                          and match.get(
+                              "status"
+                          )
                           in [
                               "SCHEDULED",
                               "TIMED",
@@ -244,81 +520,337 @@ jobs:
               )
 
               if current_matchday is not None:
-                  after_current = [
+                  current_or_later = [
                       matchday
                       for matchday
-                      in upcoming_matchdays
-                      if matchday >= current_matchday
+                      in upcoming
+                      if matchday
+                      >= current_matchday
                   ]
 
-                  if after_current:
-                      return min(after_current)
+                  if current_or_later:
+                      return min(
+                          current_or_later
+                      )
 
               return (
-                  upcoming_matchdays[0]
-                  if upcoming_matchdays
+                  upcoming[0]
+                  if upcoming
                   else None
+              )
+
+          def get_pitch_matches_for_date(
+              date_string,
+              pitch_date_cache,
+          ):
+              if (
+                  date_string
+                  in pitch_date_cache
+              ):
+                  return (
+                      pitch_date_cache[
+                          date_string
+                      ]
+                  )
+
+              response = pitch_get(
+                  f"/date/{date_string}"
+              )
+
+              matches = (
+                  response
+                  .get("data", {})
+                  .get("matches", [])
+              )
+
+              pitch_date_cache[
+                  date_string
+              ] = matches
+
+              print(
+                  f"PitchAPI {date_string}: "
+                  f"{len(matches)} matches"
+              )
+
+              return matches
+
+          def pitch_match_score(
+              football_match,
+              pitch_match,
+          ):
+              football_home = (
+                  football_match
+                  .get(
+                      "homeTeam",
+                      {},
+                  )
+                  .get("name", "")
+              )
+
+              football_away = (
+                  football_match
+                  .get(
+                      "awayTeam",
+                      {},
+                  )
+                  .get("name", "")
+              )
+
+              pitch_home = (
+                  pitch_match
+                  .get(
+                      "home_team",
+                      {},
+                  )
+                  .get("name", "")
+              )
+
+              pitch_away = (
+                  pitch_match
+                  .get(
+                      "away_team",
+                      {},
+                  )
+                  .get("name", "")
+              )
+
+              home_score = similarity(
+                  football_home,
+                  pitch_home,
+              )
+
+              away_score = similarity(
+                  football_away,
+                  pitch_away,
+              )
+
+              name_score = (
+                  home_score
+                  + away_score
+              ) / 2
+
+              football_date = (
+                  football_match
+                  .get("utcDate", "")[
+                      :10
+                  ]
+              )
+
+              pitch_date = (
+                  pitch_match
+                  .get("time_utc", "")[
+                      :10
+                  ]
+              )
+
+              if (
+                  football_date
+                  != pitch_date
+              ):
+                  return 0
+
+              football_home_goals = (
+                  football_match
+                  .get("score", {})
+                  .get("fullTime", {})
+                  .get("home")
+              )
+
+              football_away_goals = (
+                  football_match
+                  .get("score", {})
+                  .get("fullTime", {})
+                  .get("away")
+              )
+
+              pitch_home_goals = (
+                  pitch_match.get(
+                      "score_home"
+                  )
+              )
+
+              pitch_away_goals = (
+                  pitch_match.get(
+                      "score_away"
+                  )
+              )
+
+              score_bonus = 0
+
+              if (
+                  football_home_goals
+                  is not None
+                  and football_away_goals
+                  is not None
+                  and pitch_home_goals
+                  is not None
+                  and pitch_away_goals
+                  is not None
+              ):
+                  if (
+                      int(
+                          football_home_goals
+                      )
+                      == int(
+                          pitch_home_goals
+                      )
+                      and int(
+                          football_away_goals
+                      )
+                      == int(
+                          pitch_away_goals
+                      )
+                  ):
+                      score_bonus = 0.25
+                  else:
+                      score_bonus = -0.25
+
+              return (
+                  name_score
+                  + score_bonus
+              )
+
+          def find_pitch_match(
+              football_match,
+              pitch_matches,
+          ):
+              candidates = []
+
+              for pitch_match in (
+                  pitch_matches
+              ):
+                  score = pitch_match_score(
+                      football_match,
+                      pitch_match,
+                  )
+
+                  candidates.append(
+                      (
+                          score,
+                          pitch_match,
+                      )
+                  )
+
+              candidates.sort(
+                  key=lambda item:
+                      item[0],
+                  reverse=True,
+              )
+
+              if not candidates:
+                  return None, 0
+
+              best_score, best_match = (
+                  candidates[0]
+              )
+
+              # Con marcador coincidente suele
+              # superar 0,80. Sin marcador se
+              # exige similitud suficiente en
+              # ambos equipos.
+              if best_score < 0.68:
+                  return None, best_score
+
+              return (
+                  best_match,
+                  best_score,
               )
 
           result = {
               "updatedAt": datetime.now(
                   timezone.utc
               ).isoformat(),
-              "source": "football-data.org",
+              "source": {
+                  "fixtures": (
+                      "football-data.org"
+                  ),
+                  "events": "PitchAPI",
+              },
               "competitions": {},
-              "matchDetails": existing_details,
+              "matchDetails": (
+                  previous_match_details
+              ),
+              "pitchEvents": (
+                  previous_pitch_events
+              ),
           }
 
-          relevant_match_ids = set()
-          live_match_ids = set()
+          relevant_matches = []
+          relevant_football_ids = set()
 
           for code in COMPETITIONS:
               print("")
-              print(f"Downloading competition {code}")
+              print(
+                  "========================"
+              )
+              print(
+                  f"DOWNLOADING {code}"
+              )
+              print(
+                  "========================"
+              )
 
-              competition = get_json(
+              competition = football_get(
                   f"/competitions/{code}"
               )
 
-              matches_data = get_json(
-                  f"/competitions/{code}/matches"
+              matches_data = football_get(
+                  f"/competitions/{code}"
+                  "/matches"
               )
 
-              standings = get_json(
-                  f"/competitions/{code}/standings"
+              standings = football_get(
+                  f"/competitions/{code}"
+                  "/standings"
               )
 
-              scorers = get_json(
-                  f"/competitions/{code}/scorers?limit=100"
+              scorers = football_get(
+                  f"/competitions/{code}"
+                  "/scorers?limit=100"
               )
 
-              all_matches = matches_data.get(
-                  "matches",
-                  [],
+              all_matches = (
+                  matches_data.get(
+                      "matches",
+                      [],
+                  )
               )
 
               current_matchday = (
                   competition
-                  .get("currentSeason", {})
-                  .get("currentMatchday")
+                  .get(
+                      "currentSeason",
+                      {},
+                  )
+                  .get(
+                      "currentMatchday"
+                  )
               )
 
-              last_matchday = get_last_matchday(
-                  all_matches
+              last_matchday = (
+                  find_last_matchday(
+                      all_matches
+                  )
               )
 
-              next_matchday = get_next_matchday(
-                  all_matches,
-                  current_matchday,
+              next_matchday = (
+                  find_next_matchday(
+                      all_matches,
+                      current_matchday,
+                  )
               )
 
               last_matches = [
                   match
                   for match in all_matches
                   if (
-                      match.get("matchday")
+                      match.get(
+                          "matchday"
+                      )
                       == last_matchday
-                      and match.get("status")
+                      and match.get(
+                          "status"
+                      )
                       == "FINISHED"
                   )
               ]
@@ -326,7 +858,9 @@ jobs:
               live_matches = [
                   match
                   for match in all_matches
-                  if match.get("status")
+                  if match.get(
+                      "status"
+                  )
                   in [
                       "IN_PLAY",
                       "PAUSED",
@@ -337,9 +871,13 @@ jobs:
                   match
                   for match in all_matches
                   if (
-                      match.get("matchday")
+                      match.get(
+                          "matchday"
+                      )
                       == next_matchday
-                      and match.get("status")
+                      and match.get(
+                          "status"
+                      )
                       in [
                           "SCHEDULED",
                           "TIMED",
@@ -347,107 +885,288 @@ jobs:
                   )
               ]
 
-              selected_matches = (
+              selected_by_id = {}
+
+              for match in (
                   last_matches
                   + live_matches
                   + next_matches
-              )
-
-              unique_matches = {}
-
-              for match in selected_matches:
-                  unique_matches[
+              ):
+                  selected_by_id[
                       str(match["id"])
                   ] = match
 
               selected_matches = list(
-                  unique_matches.values()
+                  selected_by_id.values()
               )
 
               selected_matches.sort(
                   key=lambda match:
-                      match.get("utcDate", "")
+                      match.get(
+                          "utcDate",
+                          "",
+                      )
               )
+
+              result[
+                  "competitions"
+              ][code] = {
+                  "competition": (
+                      competition
+                  ),
+                  "matches": {
+                      **matches_data,
+                      "matches": (
+                          selected_matches
+                      ),
+                  },
+                  "lastMatchday": (
+                      last_matchday
+                  ),
+                  "nextMatchday": (
+                      next_matchday
+                  ),
+                  "lastMatches": (
+                      last_matches
+                  ),
+                  "liveMatches": (
+                      live_matches
+                  ),
+                  "nextMatches": (
+                      next_matches
+                  ),
+                  "standings": standings,
+                  "scorers": scorers,
+              }
 
               for match in (
                   last_matches
                   + live_matches
               ):
-                  relevant_match_ids.add(
-                      str(match["id"])
+                  relevant_matches.append(
+                      match
                   )
 
-              for match in live_matches:
-                  live_match_ids.add(
+                  relevant_football_ids.add(
                       str(match["id"])
                   )
-
-              result["competitions"][code] = {
-                  "competition": competition,
-                  "matches": {
-                      **matches_data,
-                      "matches": selected_matches,
-                  },
-                  "lastMatchday": last_matchday,
-                  "nextMatchday": next_matchday,
-                  "lastMatches": last_matches,
-                  "liveMatches": live_matches,
-                  "nextMatches": next_matches,
-                  "standings": standings,
-                  "scorers": scorers,
-              }
 
               print(
                   f"{code}: "
-                  f"last={last_matchday}, "
-                  f"live={len(live_matches)}, "
-                  f"next={next_matchday}"
+                  f"last day "
+                  f"{last_matchday} "
+                  f"({len(last_matches)}), "
+                  f"live "
+                  f"{len(live_matches)}, "
+                  f"next day "
+                  f"{next_matchday} "
+                  f"({len(next_matches)})"
               )
 
-          print("")
-          print(
-              "Relevant match details:",
-              len(relevant_match_ids),
+          # Recuperar información ampliada de
+          # football-data.org en una única
+          # petición mediante ids.
+          match_ids = sorted(
+              relevant_football_ids
           )
 
-          for match_id in sorted(
-              relevant_match_ids
-          ):
-              should_download = (
-                  match_id
-                  not in result["matchDetails"]
-                  or match_id
-                  in live_match_ids
+          if match_ids:
+              ids_parameter = ",".join(
+                  match_ids
               )
 
-              if not should_download:
-                  print(
-                      f"Match {match_id}: "
-                      "using saved detail"
-                  )
-                  continue
-
               try:
-                  detail = get_json(
-                      f"/matches/{match_id}"
+                  detailed_matches = (
+                      football_get(
+                          "/matches?ids="
+                          + urllib.parse.quote(
+                              ids_parameter
+                          )
+                      )
+                      .get(
+                          "matches",
+                          [],
+                      )
                   )
 
-                  result[
-                      "matchDetails"
-                  ][match_id] = detail
+                  for match in (
+                      detailed_matches
+                  ):
+                      result[
+                          "matchDetails"
+                      ][str(match["id"])] = (
+                          match
+                      )
 
                   print(
-                      f"Match {match_id}: "
-                      "detail downloaded"
+                      "football-data.org "
+                      "detailed matches:",
+                      len(
+                          detailed_matches
+                      ),
                   )
 
               except Exception as error:
                   print(
-                      f"Match {match_id}: "
-                      f"detail failed: {error}"
+                      "Could not download "
+                      "football-data.org "
+                      f"details: {error}"
                   )
 
-          valid_match_ids = {
+          pitch_date_cache = {}
+
+          pitch_matches_found = 0
+          pitch_matches_missing = 0
+          pitch_events_downloaded = 0
+          pitch_events_reused = 0
+
+          for football_match in (
+              relevant_matches
+          ):
+              football_id = str(
+                  football_match["id"]
+              )
+
+              status = (
+                  football_match.get(
+                      "status"
+                  )
+              )
+
+              existing_event_data = (
+                  result[
+                      "pitchEvents"
+                  ].get(
+                      football_id
+                  )
+              )
+
+              if (
+                  status == "FINISHED"
+                  and existing_event_data
+                  and existing_event_data
+                  .get("complete")
+              ):
+                  print(
+                      f"Match {football_id}: "
+                      "using saved PitchAPI "
+                      "events"
+                  )
+
+                  pitch_events_reused += 1
+                  continue
+
+              date_string = (
+                  football_match
+                  .get("utcDate", "")[
+                      :10
+                  ]
+              )
+
+              if not date_string:
+                  continue
+
+              try:
+                  pitch_matches = (
+                      get_pitch_matches_for_date(
+                          date_string,
+                          pitch_date_cache,
+                      )
+                  )
+
+                  (
+                      pitch_match,
+                      matching_score,
+                  ) = find_pitch_match(
+                      football_match,
+                      pitch_matches,
+                  )
+
+                  if not pitch_match:
+                      pitch_matches_missing += 1
+
+                      print(
+                          f"Match {football_id}: "
+                          "no PitchAPI match "
+                          "found. Best score: "
+                          f"{matching_score:.3f}"
+                      )
+
+                      continue
+
+                  pitch_matches_found += 1
+
+                  pitch_id = (
+                      pitch_match["id"]
+                  )
+
+                  print(
+                      f"Match {football_id}: "
+                      f"PitchAPI {pitch_id}, "
+                      "matching score "
+                      f"{matching_score:.3f}"
+                  )
+
+                  events_response = (
+                      pitch_get(
+                          f"/matches/"
+                          f"{pitch_id}/events"
+                      )
+                  )
+
+                  events = (
+                      events_response
+                      .get("data", {})
+                      .get("events", [])
+                  )
+
+                  result[
+                      "pitchEvents"
+                  ][football_id] = {
+                      "footballMatchId": (
+                          football_id
+                      ),
+                      "pitchMatchId": (
+                          pitch_id
+                      ),
+                      "matchingScore": (
+                          round(
+                              matching_score,
+                              4,
+                          )
+                      ),
+                      "complete": (
+                          status
+                          == "FINISHED"
+                      ),
+                      "updatedAt": (
+                          datetime.now(
+                              timezone.utc
+                          ).isoformat()
+                      ),
+                      "pitchMatch": (
+                          pitch_match
+                      ),
+                      "events": events,
+                  }
+
+                  pitch_events_downloaded += 1
+
+                  print(
+                      f"Match {football_id}: "
+                      f"{len(events)} events"
+                  )
+
+              except Exception as error:
+                  print(
+                      f"Match {football_id}: "
+                      "PitchAPI failed: "
+                      f"{error}"
+                  )
+
+          # Conservar únicamente los partidos
+          # actualmente presentes en la app.
+          visible_match_ids = {
               str(match["id"])
               for competition_data
               in result[
@@ -466,7 +1185,17 @@ jobs:
                   "matchDetails"
               ].items()
               if match_id
-              in valid_match_ids
+              in visible_match_ids
+          }
+
+          result["pitchEvents"] = {
+              match_id: event_data
+              for match_id, event_data
+              in result[
+                  "pitchEvents"
+              ].items()
+              if match_id
+              in visible_match_ids
           }
 
           with OUTPUT.open(
@@ -482,14 +1211,38 @@ jobs:
 
           print("")
           print(
-              "Football data generated successfully"
+              "========================"
+          )
+          print("UPDATE SUMMARY")
+          print(
+              "========================"
           )
 
           print(
-              "Saved match details:",
+              "Pitch matches found:",
+              pitch_matches_found,
+          )
+
+          print(
+              "Pitch matches missing:",
+              pitch_matches_missing,
+          )
+
+          print(
+              "Pitch events downloaded:",
+              pitch_events_downloaded,
+          )
+
+          print(
+              "Pitch events reused:",
+              pitch_events_reused,
+          )
+
+          print(
+              "Saved Pitch event sets:",
               len(
                   result[
-                      "matchDetails"
+                      "pitchEvents"
                   ]
               ),
           )
@@ -500,6 +1253,62 @@ jobs:
           python -m json.tool public/data/index.json > /dev/null
 
           echo "Football JSON is valid"
+
+          python <<'PYTHON'
+          import json
+
+          with open(
+              "public/data/index.json",
+              encoding="utf-8",
+          ) as file:
+              data = json.load(file)
+
+          print(
+              "Updated at:",
+              data.get("updatedAt")
+          )
+
+          print(
+              "Competitions:",
+              list(
+                  data
+                  .get(
+                      "competitions",
+                      {}
+                  )
+                  .keys()
+              )
+          )
+
+          pitch_events = (
+              data.get(
+                  "pitchEvents",
+                  {}
+              )
+          )
+
+          print(
+              "Pitch event sets:",
+              len(pitch_events)
+          )
+
+          event_count = sum(
+              len(
+                  item.get(
+                      "events",
+                      []
+                  )
+              )
+              for item
+              in pitch_events.values()
+          )
+
+          print(
+              "Total Pitch events:",
+              event_count
+          )
+          PYTHON
+
           ls -lh public/data/index.json
 
       - name: Commit football data
@@ -514,8 +1323,12 @@ jobs:
             exit 0
           fi
 
-          git commit -m "Update football data"
+          git commit -m "Update football data and match events"
+
+          echo "Synchronizing with latest main..."
 
           git pull --rebase origin main
+
+          echo "Pushing football data..."
 
           git push origin main

@@ -14,6 +14,8 @@ import {
   RefreshCw,
   Shield,
   Square,
+  Repeat2,
+  UserRound,
 } from "lucide-react";
 
 const DATA_URL =
@@ -65,13 +67,9 @@ const TABS = [
 ];
 
 function formatDate(value) {
-  if (!value) {
-    return "";
-  }
+  if (!value) return "";
 
-  return new Date(
-    value
-  ).toLocaleDateString(
+  return new Date(value).toLocaleDateString(
     "es-ES",
     {
       weekday: "short",
@@ -82,13 +80,9 @@ function formatDate(value) {
 }
 
 function formatTime(value) {
-  if (!value) {
-    return "";
-  }
+  if (!value) return "";
 
-  return new Date(
-    value
-  ).toLocaleTimeString(
+  return new Date(value).toLocaleTimeString(
     "es-ES",
     {
       hour: "2-digit",
@@ -98,13 +92,9 @@ function formatTime(value) {
 }
 
 function formatFullDate(value) {
-  if (!value) {
-    return "";
-  }
+  if (!value) return "";
 
-  return new Date(
-    value
-  ).toLocaleString(
+  return new Date(value).toLocaleString(
     "es-ES",
     {
       weekday: "long",
@@ -117,28 +107,26 @@ function formatFullDate(value) {
   );
 }
 
+function isLive(match) {
+  return [
+    "IN_PLAY",
+    "PAUSED",
+  ].includes(match?.status);
+}
+
 function statusLabel(match) {
-  const status =
-    match?.status;
+  if (!match) return "";
 
-  if (
-    status === "IN_PLAY"
-  ) {
-    const minute =
-      match.minute;
-
-    const injuryTime =
-      match.injuryTime;
-
+  if (match.status === "IN_PLAY") {
     if (
-      minute &&
-      injuryTime
+      match.minute &&
+      match.injuryTime
     ) {
-      return `${minute}+${injuryTime}'`;
+      return `${match.minute}+${match.injuryTime}'`;
     }
 
-    if (minute) {
-      return `${minute}'`;
+    if (match.minute) {
+      return `${match.minute}'`;
     }
 
     return "EN DIRECTO";
@@ -155,42 +143,32 @@ function statusLabel(match) {
   };
 
   return (
-    labels[status] ||
-    status ||
+    labels[match.status] ||
+    match.status ||
     ""
   );
 }
 
-function isLive(match) {
-  return [
-    "IN_PLAY",
-    "PAUSED",
-  ].includes(
-    match?.status
-  );
-}
-
-function isUpcoming(match) {
-  return [
-    "SCHEDULED",
-    "TIMED",
-  ].includes(
-    match?.status
-  );
+function scrollTop() {
+  window.requestAnimationFrame(() => {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  });
 }
 
 function TeamBadge({
   team,
   size = "normal",
 }) {
-  const [imageError, setImageError] =
+  const [error, setError] =
     useState(false);
 
   useEffect(() => {
-    setImageError(false);
+    setError(false);
   }, [team?.id]);
 
-  const box =
+  const container =
     size === "large"
       ? "h-16 w-16"
       : "h-10 w-10";
@@ -202,10 +180,9 @@ function TeamBadge({
 
   return (
     <div
-      className={`grid ${box} flex-shrink-0 place-items-center rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm`}
+      className={`grid ${container} flex-shrink-0 place-items-center rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm`}
     >
-      {team?.crest &&
-      !imageError ? (
+      {team?.crest && !error ? (
         <img
           src={team.crest}
           alt={
@@ -214,17 +191,17 @@ function TeamBadge({
           }
           className={`${image} object-contain`}
           onError={() =>
-            setImageError(true)
+            setError(true)
           }
         />
       ) : (
         <Shield
-          className="text-emerald-700"
           size={
             size === "large"
               ? 30
               : 20
           }
+          className="text-emerald-700"
         />
       )}
     </div>
@@ -243,7 +220,7 @@ function TeamLine({
       <div
         className={`min-w-0 flex-1 truncate ${
           winner
-            ? "font-black text-slate-950"
+            ? "font-black"
             : "font-semibold text-slate-700"
         }`}
       >
@@ -254,7 +231,7 @@ function TeamLine({
       <div
         className={`text-2xl ${
           winner
-            ? "font-black text-slate-950"
+            ? "font-black"
             : "font-bold text-slate-500"
         }`}
       >
@@ -269,29 +246,28 @@ function MatchCard({
   onOpen,
 }) {
   const homeGoals =
-    match.score?.fullTime
-      ?.home;
+    match.score?.fullTime?.home;
 
   const awayGoals =
-    match.score?.fullTime
-      ?.away;
+    match.score?.fullTime?.away;
 
   const finished =
-    match.status ===
-    "FINISHED";
+    match.status === "FINISHED";
 
   const live =
     isLive(match);
 
-  const upcoming =
-    isUpcoming(match);
+  const upcoming = [
+    "TIMED",
+    "SCHEDULED",
+  ].includes(match.status);
 
   return (
     <button
       onClick={() =>
         onOpen(match)
       }
-      className={`w-full rounded-3xl border bg-white p-4 text-left shadow-sm transition active:bg-emerald-50 md:hover:border-emerald-300 ${
+      className={`w-full rounded-3xl border bg-white p-4 text-left shadow-sm transition active:bg-emerald-50 ${
         live
           ? "border-red-300 ring-2 ring-red-100"
           : "border-slate-200"
@@ -308,12 +284,7 @@ function MatchCard({
                 : "text-slate-600"
             }`}
           >
-            {live && (
-              <span className="mr-1">
-                ●
-              </span>
-            )}
-
+            {live && "● "}
             {statusLabel(match)}
           </div>
 
@@ -330,34 +301,26 @@ function MatchCard({
         </div>
 
         <div className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">
-          J
-          {match.matchday ||
-            "-"}
+          J{match.matchday || "-"}
         </div>
       </div>
 
       <div className="space-y-3">
         <TeamLine
-          team={
-            match.homeTeam
-          }
+          team={match.homeTeam}
           goals={homeGoals}
           winner={
             finished &&
-            homeGoals >
-              awayGoals
+            homeGoals > awayGoals
           }
         />
 
         <TeamLine
-          team={
-            match.awayTeam
-          }
+          team={match.awayTeam}
           goals={awayGoals}
           winner={
             finished &&
-            awayGoals >
-              homeGoals
+            awayGoals > homeGoals
           }
         />
       </div>
@@ -365,6 +328,7 @@ function MatchCard({
       {match.venue && (
         <div className="mt-4 flex items-center gap-1 border-t border-slate-100 pt-3 text-[10px] text-slate-400">
           <MapPin size={12} />
+
           <span className="truncate">
             {match.venue}
           </span>
@@ -378,14 +342,14 @@ function MatchCard({
   );
 }
 
-function MatchSection({
+function MatchGroup({
   title,
   subtitle,
   matches,
   onOpen,
   live = false,
 }) {
-  if (!matches.length) {
+  if (!matches?.length) {
     return null;
   }
 
@@ -397,7 +361,7 @@ function MatchSection({
             <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
           )}
 
-          <h3 className="text-lg font-black text-slate-950">
+          <h3 className="text-lg font-black">
             {title}
           </h3>
         </div>
@@ -410,15 +374,13 @@ function MatchSection({
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {matches.map(
-          (match) => (
-            <MatchCard
-              key={match.id}
-              match={match}
-              onOpen={onOpen}
-            />
-          )
-        )}
+        {matches.map((match) => (
+          <MatchCard
+            key={match.id}
+            match={match}
+            onOpen={onOpen}
+          />
+        ))}
       </div>
     </section>
   );
@@ -434,20 +396,15 @@ function MatchesView({
 }) {
   return (
     <div>
-      {liveMatches.length >
-        0 && (
-        <MatchSection
-          title="En directo"
-          subtitle="Partidos que se están disputando ahora"
-          matches={
-            liveMatches
-          }
-          onOpen={onOpen}
-          live
-        />
-      )}
+      <MatchGroup
+        title="En directo"
+        subtitle="Partidos que se están disputando ahora"
+        matches={liveMatches}
+        onOpen={onOpen}
+        live
+      />
 
-      <MatchSection
+      <MatchGroup
         title="Última jornada"
         subtitle={
           lastMatchday
@@ -458,7 +415,7 @@ function MatchesView({
         onOpen={onOpen}
       />
 
-      <MatchSection
+      <MatchGroup
         title="Próxima jornada"
         subtitle={
           nextMatchday
@@ -469,9 +426,9 @@ function MatchesView({
         onOpen={onOpen}
       />
 
-      {!lastMatches.length &&
-        !liveMatches.length &&
-        !nextMatches.length && (
+      {!lastMatches?.length &&
+        !liveMatches?.length &&
+        !nextMatches?.length && (
           <div className="rounded-3xl bg-white p-8 text-center text-sm text-slate-500">
             No hay partidos disponibles.
           </div>
@@ -486,16 +443,14 @@ function StandingsView({
   const table =
     standings?.find(
       (item) =>
-        item.type ===
-        "TOTAL"
+        item.type === "TOTAL"
     )?.table ||
-    standings?.[0]
-      ?.table ||
+    standings?.[0]?.table ||
     [];
 
   return (
     <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-      <div className="grid grid-cols-[30px_minmax(0,1fr)_28px_28px_30px_36px_42px] bg-slate-100 px-2 py-3 text-[9px] font-black uppercase text-slate-500">
+      <div className="grid grid-cols-[28px_minmax(0,1fr)_28px_27px_27px_34px_40px] bg-slate-100 px-2 py-3 text-[8px] font-black uppercase text-slate-500">
         <div>#</div>
         <div>Equipo</div>
         <div className="text-center">
@@ -515,53 +470,49 @@ function StandingsView({
         </div>
       </div>
 
-      {table.map(
-        (row) => (
-          <div
-            key={row.team.id}
-            className="grid grid-cols-[30px_minmax(0,1fr)_28px_28px_30px_36px_42px] items-center border-t border-slate-200 px-2 py-3"
-          >
-            <div className="text-xs font-black text-slate-400">
-              {row.position}
-            </div>
+      {table.map((row) => (
+        <div
+          key={row.team.id}
+          className="grid grid-cols-[28px_minmax(0,1fr)_28px_27px_27px_34px_40px] items-center border-t border-slate-200 px-2 py-3"
+        >
+          <div className="text-xs font-black text-slate-400">
+            {row.position}
+          </div>
 
-            <div className="flex min-w-0 items-center gap-2">
-              <TeamBadge
-                team={row.team}
-              />
+          <div className="flex min-w-0 items-center gap-2">
+            <TeamBadge
+              team={row.team}
+            />
 
-              <div className="min-w-0 truncate text-xs font-bold">
-                {row.team
-                  .shortName ||
-                  row.team.name}
-              </div>
-            </div>
-
-            <div className="text-center text-xs">
-              {row.playedGames}
-            </div>
-
-            <div className="text-center text-xs">
-              {row.won}
-            </div>
-
-            <div className="text-center text-xs">
-              {row.draw}
-            </div>
-
-            <div className="text-center text-xs">
-              {row.goalDifference >
-              0
-                ? `+${row.goalDifference}`
-                : row.goalDifference}
-            </div>
-
-            <div className="text-right text-sm font-black text-emerald-700">
-              {row.points}
+            <div className="min-w-0 truncate text-xs font-bold">
+              {row.team.shortName ||
+                row.team.name}
             </div>
           </div>
-        )
-      )}
+
+          <div className="text-center text-xs">
+            {row.playedGames}
+          </div>
+
+          <div className="text-center text-xs">
+            {row.won}
+          </div>
+
+          <div className="text-center text-xs">
+            {row.draw}
+          </div>
+
+          <div className="text-center text-xs">
+            {row.goalDifference > 0
+              ? `+${row.goalDifference}`
+              : row.goalDifference}
+          </div>
+
+          <div className="text-right text-sm font-black text-emerald-700">
+            {row.points}
+          </div>
+        </div>
+      ))}
     </section>
   );
 }
@@ -575,20 +526,29 @@ function StatisticsView({
   const ordered =
     useMemo(() => {
       return [...scorers].sort(
-        (a, b) =>
-          mode === "goals"
-            ? Number(
-                b.goals || 0
-              ) -
+        (a, b) => {
+          if (
+            mode === "assists"
+          ) {
+            return (
               Number(
-                a.goals || 0
-              )
-            : Number(
                 b.assists || 0
               ) -
               Number(
                 a.assists || 0
               )
+            );
+          }
+
+          return (
+            Number(
+              b.goals || 0
+            ) -
+            Number(
+              a.goals || 0
+            )
+          );
+        }
       );
     }, [scorers, mode]);
 
@@ -601,7 +561,7 @@ function StatisticsView({
           }
           className={`rounded-xl py-2 text-sm font-black ${
             mode === "goals"
-              ? "bg-white text-slate-950 shadow-sm"
+              ? "bg-white shadow-sm"
               : "text-slate-500"
           }`}
         >
@@ -610,11 +570,13 @@ function StatisticsView({
 
         <button
           onClick={() =>
-            setMode("assists")
+            setMode(
+              "assists"
+            )
           }
           className={`rounded-xl py-2 text-sm font-black ${
             mode === "assists"
-              ? "bg-white text-slate-950 shadow-sm"
+              ? "bg-white shadow-sm"
               : "text-slate-500"
           }`}
         >
@@ -623,9 +585,13 @@ function StatisticsView({
       </div>
 
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-        <div className="grid grid-cols-[30px_minmax(0,1fr)_45px] bg-slate-100 px-3 py-3 text-[9px] font-black uppercase text-slate-500">
+        <div className="grid grid-cols-[30px_minmax(0,1fr)_48px] bg-slate-100 px-3 py-3 text-[9px] font-black uppercase text-slate-500">
           <div>#</div>
-          <div>Jugador</div>
+
+          <div>
+            Jugador
+          </div>
+
           <div className="text-right">
             {mode === "goals"
               ? "Goles"
@@ -637,7 +603,7 @@ function StatisticsView({
           (item, index) => (
             <div
               key={`${item.player.id}-${item.team.id}`}
-              className="grid grid-cols-[30px_minmax(0,1fr)_45px] items-center border-t border-slate-200 px-3 py-3"
+              className="grid grid-cols-[30px_minmax(0,1fr)_48px] items-center border-t border-slate-200 px-3 py-3"
             >
               <div className="text-xs font-black text-slate-400">
                 {index + 1}
@@ -661,8 +627,7 @@ function StatisticsView({
                   <div className="truncate text-[9px] text-slate-400">
                     {item.team
                       .shortName ||
-                      item.team
-                        .name}
+                      item.team.name}
                     {" · "}
                     {item.playedMatches ??
                       0}{" "}
@@ -686,48 +651,158 @@ function StatisticsView({
   );
 }
 
-function EventTeam({
-  event,
-  match,
-}) {
-  const teamId =
-    event?.team?.id;
+function normalizePitchEventType(
+  event
+) {
+  return String(
+    event?.event_type ||
+      event?.type ||
+      ""
+  )
+    .toLowerCase()
+    .replace(/[_\s-]/g, "");
+}
+
+function eventMinute(event) {
+  const minute =
+    event?.minute;
+
+  const added =
+    event?.minute_added ??
+    event?.injury_time ??
+    event?.extra_minute;
 
   if (
-    teamId ===
-    match.homeTeam?.id
+    minute === null ||
+    minute === undefined
   ) {
-    return (
-      match.homeTeam
-        ?.shortName ||
-      match.homeTeam?.name
-    );
+    return "";
   }
 
-  if (
-    teamId ===
-    match.awayTeam?.id
-  ) {
-    return (
-      match.awayTeam
-        ?.shortName ||
-      match.awayTeam?.name
-    );
+  if (added) {
+    return `${minute}+${added}'`;
   }
 
+  return `${minute}'`;
+}
+
+function eventPlayerName(
+  event
+) {
   return (
-    event?.team
-      ?.shortName ||
-    event?.team?.name ||
+    event?.player?.name ||
+    event?.player_name ||
+    event?.scorer?.name ||
+    event?.name ||
     ""
   );
 }
 
-function GoalEvents({
-  goals,
-  match,
+function eventAssistName(
+  event
+) {
+  return (
+    event?.assist?.name ||
+    event?.assist_player
+      ?.name ||
+    event?.assist_player_name ||
+    ""
+  );
+}
+
+function eventTeamName(
+  event
+) {
+  return (
+    event?.team?.name ||
+    event?.team_name ||
+    ""
+  );
+}
+
+function eventScore(event) {
+  const home =
+    event?.score_home ??
+    event?.score?.home;
+
+  const away =
+    event?.score_away ??
+    event?.score?.away;
+
+  if (
+    home === undefined ||
+    home === null ||
+    away === undefined ||
+    away === null
+  ) {
+    return null;
+  }
+
+  return `${home}-${away}`;
+}
+
+function isGoalEvent(event) {
+  const type =
+    normalizePitchEventType(
+      event
+    );
+
+  return [
+    "goal",
+    "owngoal",
+    "penaltygoal",
+  ].includes(type);
+}
+
+function isYellowCardEvent(
+  event
+) {
+  const type =
+    normalizePitchEventType(
+      event
+    );
+
+  return [
+    "yellowcard",
+    "yellow",
+  ].includes(type);
+}
+
+function isRedCardEvent(
+  event
+) {
+  const type =
+    normalizePitchEventType(
+      event
+    );
+
+  return [
+    "redcard",
+    "red",
+    "secondyellowcard",
+    "secondyellow",
+  ].includes(type);
+}
+
+function isSubstitutionEvent(
+  event
+) {
+  return (
+    normalizePitchEventType(
+      event
+    ) === "substitution"
+  );
+}
+
+function GoalsSection({
+  events,
 }) {
-  if (!goals?.length) {
+  const goals =
+    events.filter(
+      isGoalEvent
+    );
+
+  if (!goals.length) {
     return null;
   }
 
@@ -747,74 +822,50 @@ function GoalEvents({
       <div className="space-y-3">
         {goals.map(
           (goal, index) => {
-            const minute =
-              goal.minute;
-
-            const injuryTime =
-              goal.injuryTime;
-
-            const minuteLabel =
-              injuryTime
-                ? `${minute}+${injuryTime}'`
-                : minute
-                ? `${minute}'`
-                : "";
-
-            const scorer =
-              goal.scorer?.name ||
-              "Gol";
+            const player =
+              eventPlayerName(
+                goal
+              );
 
             const assist =
-              goal.assist?.name;
+              eventAssistName(
+                goal
+              );
 
-            const type =
-              goal.type ===
-              "PENALTY"
-                ? "Penalti"
-                : goal.type ===
-                  "OWN"
-                ? "Autogol"
-                : null;
+            const score =
+              eventScore(goal);
 
             return (
               <div
-                key={`${scorer}-${minute}-${index}`}
-                className="flex items-start gap-3 rounded-2xl bg-slate-50 p-3"
+                key={`${goal.id || index}`}
+                className="flex items-start gap-3 rounded-2xl bg-emerald-50 p-3"
               >
                 <div className="w-12 flex-shrink-0 text-sm font-black text-emerald-700">
-                  {minuteLabel}
+                  {eventMinute(
+                    goal
+                  )}
                 </div>
 
                 <div className="min-w-0 flex-1">
-                  <div className="font-bold">
-                    {scorer}
+                  <div className="font-black">
+                    ⚽{" "}
+                    {player ||
+                      "Gol"}
                   </div>
 
-                  <div className="mt-0.5 text-xs text-slate-500">
-                    {EventTeam({
-                      event: goal,
-                      match,
-                    })}
+                  <div className="mt-1 text-xs text-slate-500">
+                    {eventTeamName(
+                      goal
+                    )}
 
                     {assist &&
                       ` · Asistencia: ${assist}`}
-
-                    {type &&
-                      ` · ${type}`}
                   </div>
                 </div>
 
-                {goal.score && (
-                  <div className="font-black">
-                    {
-                      goal.score
-                        .home
-                    }
-                    -
-                    {
-                      goal.score
-                        .away
-                    }
+                {score && (
+                  <div className="rounded-lg bg-white px-2 py-1 text-sm font-black">
+                    {score}
                   </div>
                 )}
               </div>
@@ -826,11 +877,21 @@ function GoalEvents({
   );
 }
 
-function BookingEvents({
-  bookings,
-  match,
+function CardsSection({
+  events,
 }) {
-  if (!bookings?.length) {
+  const cards =
+    events.filter(
+      (event) =>
+        isYellowCardEvent(
+          event
+        ) ||
+        isRedCardEvent(
+          event
+        )
+    );
+
+  if (!cards.length) {
     return null;
   }
 
@@ -848,36 +909,22 @@ function BookingEvents({
       </div>
 
       <div className="space-y-3">
-        {bookings.map(
-          (booking, index) => {
-            const minute =
-              booking.minute;
-
-            const injuryTime =
-              booking.injuryTime;
-
-            const minuteLabel =
-              injuryTime
-                ? `${minute}+${injuryTime}'`
-                : minute
-                ? `${minute}'`
-                : "";
-
+        {cards.map(
+          (card, index) => {
             const red =
-              booking.card ===
-                "RED_CARD" ||
-              booking.card ===
-                "RED" ||
-              booking.card ===
-                "SECOND_YELLOW_CARD";
+              isRedCardEvent(
+                card
+              );
 
             return (
               <div
-                key={`${booking.player?.id}-${minute}-${index}`}
+                key={`${card.id || index}`}
                 className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3"
               >
                 <div className="w-12 flex-shrink-0 text-sm font-black text-slate-500">
-                  {minuteLabel}
+                  {eventMinute(
+                    card
+                  )}
                 </div>
 
                 <div
@@ -888,19 +935,24 @@ function BookingEvents({
                   }`}
                 />
 
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0">
                   <div className="font-bold">
-                    {booking.player
-                      ?.name ||
+                    {eventPlayerName(
+                      card
+                    ) ||
                       "Jugador"}
                   </div>
 
                   <div className="text-xs text-slate-500">
-                    {EventTeam({
-                      event:
-                        booking,
-                      match,
-                    })}
+                    {eventTeamName(
+                      card
+                    )}
+
+                    {" · "}
+
+                    {red
+                      ? "Roja"
+                      : "Amarilla"}
                   </div>
                 </div>
               </div>
@@ -912,27 +964,184 @@ function BookingEvents({
   );
 }
 
+function SubstitutionsSection({
+  events,
+}) {
+  const substitutions =
+    events.filter(
+      isSubstitutionEvent
+    );
+
+  const [
+    expanded,
+    setExpanded,
+  ] = useState(false);
+
+  if (
+    !substitutions.length
+  ) {
+    return null;
+  }
+
+  return (
+    <section className="border-t border-slate-200 p-5">
+      <button
+        onClick={() =>
+          setExpanded(
+            !expanded
+          )
+        }
+        className="flex w-full items-center justify-between"
+      >
+        <div className="flex items-center gap-2">
+          <Repeat2
+            size={19}
+            className="text-blue-600"
+          />
+
+          <h3 className="text-lg font-black">
+            Cambios
+          </h3>
+        </div>
+
+        <span className="text-xs font-bold text-emerald-700">
+          {expanded
+            ? "Ocultar"
+            : `Ver ${substitutions.length}`}
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="mt-4 space-y-3">
+          {substitutions.map(
+            (
+              event,
+              index
+            ) => {
+              const playerOut =
+                event?.player_out
+                  ?.name ||
+                event
+                  ?.player_out_name ||
+                event?.player
+                  ?.name ||
+                "";
+
+              const playerIn =
+                event?.player_in
+                  ?.name ||
+                event
+                  ?.player_in_name ||
+                event?.related_player
+                  ?.name ||
+                "";
+
+              return (
+                <div
+                  key={`${event.id || index}`}
+                  className="rounded-2xl bg-slate-50 p-3"
+                >
+                  <div className="flex gap-3">
+                    <div className="w-12 text-sm font-black text-slate-500">
+                      {eventMinute(
+                        event
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs text-slate-400">
+                        {eventTeamName(
+                          event
+                        )}
+                      </div>
+
+                      {playerIn && (
+                        <div className="mt-1 text-sm font-bold text-emerald-700">
+                          ↑{" "}
+                          {playerIn}
+                        </div>
+                      )}
+
+                      {playerOut && (
+                        <div className="text-sm text-red-600">
+                          ↓{" "}
+                          {playerOut}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MatchTimeline({
+  events,
+}) {
+  if (!events.length) {
+    return (
+      <div className="border-t border-slate-200 p-5 text-center text-sm text-slate-500">
+        Los eventos detallados de este partido todavía no están disponibles.
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <GoalsSection
+        events={events}
+      />
+
+      <CardsSection
+        events={events}
+      />
+
+      <SubstitutionsSection
+        events={events}
+      />
+    </>
+  );
+}
+
 function MatchDetail({
   match,
   detail,
+  pitchData,
   onBack,
 }) {
   const fullMatch =
     detail || match;
 
+  const pitchMatch =
+    pitchData?.pitchMatch;
+
+  const pitchEvents =
+    Array.isArray(
+      pitchData?.events
+    )
+      ? pitchData.events
+      : [];
+
   const homeGoals =
     fullMatch.score?.fullTime
-      ?.home;
+      ?.home ??
+    pitchMatch?.score_home;
 
   const awayGoals =
     fullMatch.score?.fullTime
-      ?.away;
+      ?.away ??
+    pitchMatch?.score_away;
 
-  const halfTimeHome =
+  const halfHome =
     fullMatch.score?.halfTime
       ?.home;
 
-  const halfTimeAway =
+  const halfAway =
     fullMatch.score?.halfTime
       ?.away;
 
@@ -978,7 +1187,8 @@ function MatchDetail({
           <div className="flex min-w-0 flex-col items-center text-center">
             <TeamBadge
               team={
-                fullMatch.homeTeam
+                fullMatch
+                  .homeTeam
               }
               size="large"
             />
@@ -1012,7 +1222,8 @@ function MatchDetail({
           <div className="flex min-w-0 flex-col items-center text-center">
             <TeamBadge
               team={
-                fullMatch.awayTeam
+                fullMatch
+                  .awayTeam
               }
               size="large"
             />
@@ -1049,7 +1260,8 @@ function MatchDetail({
 
                 <div className="text-xs text-slate-500">
                   {formatFullDate(
-                    fullMatch.utcDate
+                    fullMatch
+                      .utcDate
                   )}
                 </div>
               </div>
@@ -1078,10 +1290,10 @@ function MatchDetail({
 
             {referee && (
               <div className="flex items-start gap-3">
-              <Shield
-  size={18}
-  className="mt-0.5 text-emerald-700"
-/>
+                <Shield
+                  size={18}
+                  className="mt-0.5 text-emerald-700"
+                />
 
                 <div>
                   <div className="text-sm font-bold">
@@ -1100,13 +1312,13 @@ function MatchDetail({
               </div>
             )}
 
-            {halfTimeHome !==
+            {halfHome !==
               null &&
-              halfTimeHome !==
+              halfHome !==
                 undefined &&
-              halfTimeAway !==
+              halfAway !==
                 null &&
-              halfTimeAway !==
+              halfAway !==
                 undefined && (
                 <div className="flex items-start gap-3">
                   <Clock3
@@ -1120,13 +1332,9 @@ function MatchDetail({
                     </div>
 
                     <div className="text-xs text-slate-500">
-                      {
-                        halfTimeHome
-                      }
+                      {halfHome}
                       -
-                      {
-                        halfTimeAway
-                      }
+                      {halfAway}
                     </div>
                   </div>
                 </div>
@@ -1134,30 +1342,9 @@ function MatchDetail({
           </div>
         </section>
 
-        <GoalEvents
-          goals={
-            fullMatch.goals
-          }
-          match={fullMatch}
+        <MatchTimeline
+          events={pitchEvents}
         />
-
-        <BookingEvents
-          bookings={
-            fullMatch.bookings
-          }
-          match={fullMatch}
-        />
-
-        {!fullMatch.goals
-          ?.length &&
-          !fullMatch.bookings
-            ?.length &&
-          fullMatch.status ===
-            "FINISHED" && (
-            <div className="border-t border-slate-200 p-5 text-center text-sm text-slate-500">
-              Los eventos detallados de este partido no están disponibles.
-            </div>
-          )}
       </article>
     </section>
   );
@@ -1168,6 +1355,7 @@ export default function App() {
     useState({
       competitions: {},
       matchDetails: {},
+      pitchEvents: {},
     });
 
   const [
@@ -1231,21 +1419,7 @@ export default function App() {
 
   useEffect(() => {
     if (selectedMatch) {
-      window.requestAnimationFrame(
-        () => {
-          window.scrollTo(
-            0,
-            0
-          );
-
-          document
-            .documentElement
-            .scrollTop = 0;
-
-          document.body.scrollTop =
-            0;
-        }
-      );
+      scrollTop();
     }
   }, [selectedMatch]);
 
@@ -1270,22 +1444,27 @@ export default function App() {
     matches.filter(
       (match) =>
         match.status ===
-        "FINISHED" &&
+          "FINISHED" &&
         match.matchday ===
           leagueData.lastMatchday
     );
 
   const liveMatches =
     leagueData.liveMatches ||
-    matches.filter((match) =>
-      isLive(match)
+    matches.filter(
+      isLive
     );
 
   const nextMatches =
     leagueData.nextMatches ||
     matches.filter(
       (match) =>
-        isUpcoming(match) &&
+        [
+          "TIMED",
+          "SCHEDULED",
+        ].includes(
+          match.status
+        ) &&
         match.matchday ===
           leagueData.nextMatchday
     );
@@ -1307,24 +1486,27 @@ export default function App() {
         ] || null
       : null;
 
-  function changeLeague(code) {
+  const selectedPitchData =
+    selectedMatch
+      ? data.pitchEvents?.[
+          String(
+            selectedMatch.id
+          )
+        ] || null
+      : null;
+
+  function changeLeague(
+    code
+  ) {
     setLeagueCode(code);
     setSelectedMatch(null);
-
-    window.scrollTo(
-      0,
-      0
-    );
+    scrollTop();
   }
 
   function changeTab(key) {
     setTab(key);
     setSelectedMatch(null);
-
-    window.scrollTo(
-      0,
-      0
-    );
+    scrollTop();
   }
 
   return (
@@ -1365,7 +1547,9 @@ export default function App() {
           </button>
 
           <button
-            onClick={loadData}
+            onClick={
+              loadData
+            }
             className="rounded-xl border border-slate-200 p-2 text-slate-600"
           >
             <RefreshCw
@@ -1389,11 +1573,16 @@ export default function App() {
             detail={
               selectedDetail
             }
-            onBack={() =>
+            pitchData={
+              selectedPitchData
+            }
+            onBack={() => {
               setSelectedMatch(
                 null
-              )
-            }
+              );
+
+              scrollTop();
+            }}
           />
         ) : (
           <>
@@ -1474,6 +1663,7 @@ export default function App() {
                 <div className="text-right text-[9px] text-slate-400">
                   Actualizado
                   <br />
+
                   {new Date(
                     data.updatedAt
                   ).toLocaleString(
@@ -1504,10 +1694,12 @@ export default function App() {
                   nextMatches
                 }
                 lastMatchday={
-                  leagueData.lastMatchday
+                  leagueData
+                    .lastMatchday
                 }
                 nextMatchday={
-                  leagueData.nextMatchday
+                  leagueData
+                    .nextMatchday
                 }
                 onOpen={
                   setSelectedMatch
@@ -1548,7 +1740,9 @@ export default function App() {
               <button
                 key={key}
                 onClick={() =>
-                  changeTab(key)
+                  changeTab(
+                    key
+                  )
                 }
                 className={`flex flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-bold ${
                   tab === key
@@ -1556,7 +1750,10 @@ export default function App() {
                     : "text-slate-500"
                 }`}
               >
-                <Icon size={18} />
+                <Icon
+                  size={18}
+                />
+
                 {label}
               </button>
             )

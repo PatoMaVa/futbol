@@ -29,9 +29,9 @@ const LEAGUES = [
   },
   {
     code: "PL",
-    name: "Premier League",
+    name: "Premier",
     country: "Inglaterra",
-    flag: "🏴",
+    flag: "🇬🇧",
   },
   {
     code: "SA",
@@ -1955,7 +1955,7 @@ export default function App() {
                         item.code
                       )
                     }
-                    className={`flex-shrink-0 rounded-2xl px-4 py-3 text-left ${
+                    className={`w-[92px] flex-shrink-0 rounded-2xl px-3 py-3 text-left ${
                       leagueCode ===
                       item.code
                         ? "bg-emerald-700 text-white"

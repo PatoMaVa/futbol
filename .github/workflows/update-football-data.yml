@@ -15,6 +15,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,7 +27,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Download competitions, matches, standings and scorers
+      - name: Download football data
         env:
           FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
         run: |
@@ -34,66 +35,478 @@ jobs:
           import json
           import os
           import time
+          import urllib.error
           import urllib.request
           from datetime import datetime, timezone
           from pathlib import Path
 
           API = "https://api.football-data.org/v4"
           TOKEN = os.environ["FOOTBALL_DATA_TOKEN"]
-          COMPETITIONS = ["PD", "PL", "SA", "FL1"]
+
+          COMPETITIONS = [
+              "PD",
+              "PL",
+              "SA",
+              "FL1",
+          ]
+
           OUTPUT = Path("public/data/index.json")
-          OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+          OUTPUT.parent.mkdir(
+              parents=True,
+              exist_ok=True,
+          )
+
+          existing_details = {}
+
+          if OUTPUT.exists():
+              try:
+                  with OUTPUT.open(
+                      "r",
+                      encoding="utf-8",
+                  ) as file:
+                      previous_data = json.load(file)
+
+                  existing_details = (
+                      previous_data.get(
+                          "matchDetails",
+                          {},
+                      )
+                  )
+
+                  print(
+                      "Existing match details:",
+                      len(existing_details),
+                  )
+
+              except Exception as error:
+                  print(
+                      "Could not read previous data:",
+                      error,
+                  )
 
           def get_json(path):
               url = f"{API}{path}"
+
+              print(f"Downloading {url}")
+
               request = urllib.request.Request(
                   url,
                   headers={
                       "X-Auth-Token": TOKEN,
                       "Accept": "application/json",
-                      "User-Agent": "FootballGitHubApp/1.0",
+                      "User-Agent": (
+                          "FootballGitHubApp/2.0"
+                      ),
                   },
               )
-              with urllib.request.urlopen(request, timeout=60) as response:
-                  return json.loads(response.read().decode("utf-8"))
+
+              last_error = None
+
+              for attempt in range(1, 4):
+                  try:
+                      with urllib.request.urlopen(
+                          request,
+                          timeout=60,
+                      ) as response:
+                          result = json.loads(
+                              response
+                              .read()
+                              .decode("utf-8")
+                          )
+
+                      time.sleep(7)
+
+                      return result
+
+                  except urllib.error.HTTPError as error:
+                      last_error = error
+
+                      print(
+                          f"HTTP {error.code} "
+                          f"on attempt {attempt}"
+                      )
+
+                      if error.code == 429:
+                          time.sleep(65)
+                      elif attempt < 3:
+                          time.sleep(15)
+
+                  except Exception as error:
+                      last_error = error
+
+                      print(
+                          f"Attempt {attempt} failed:",
+                          error,
+                      )
+
+                      if attempt < 3:
+                          time.sleep(15)
+
+              raise RuntimeError(
+                  f"Could not download {url}: "
+                  f"{last_error}"
+              )
+
+          def matchday_status(matches):
+              summary = {}
+
+              for match in matches:
+                  matchday = match.get("matchday")
+
+                  if matchday is None:
+                      continue
+
+                  summary.setdefault(
+                      matchday,
+                      {
+                          "total": 0,
+                          "finished": 0,
+                          "started": 0,
+                          "scheduled": 0,
+                      },
+                  )
+
+                  status = match.get("status")
+                  item = summary[matchday]
+
+                  item["total"] += 1
+
+                  if status == "FINISHED":
+                      item["finished"] += 1
+
+                  if status in [
+                      "FINISHED",
+                      "IN_PLAY",
+                      "PAUSED",
+                  ]:
+                      item["started"] += 1
+
+                  if status in [
+                      "SCHEDULED",
+                      "TIMED",
+                  ]:
+                      item["scheduled"] += 1
+
+              return summary
+
+          def get_last_matchday(matches):
+              summary = matchday_status(matches)
+
+              finished_matchdays = [
+                  matchday
+                  for matchday, item
+                  in summary.items()
+                  if (
+                      item["finished"] > 0
+                      and item["started"]
+                      == item["total"]
+                  )
+              ]
+
+              if finished_matchdays:
+                  return max(finished_matchdays)
+
+              any_finished = [
+                  match.get("matchday")
+                  for match in matches
+                  if (
+                      match.get("status")
+                      == "FINISHED"
+                      and match.get("matchday")
+                      is not None
+                  )
+              ]
+
+              return (
+                  max(any_finished)
+                  if any_finished
+                  else None
+              )
+
+          def get_next_matchday(
+              matches,
+              current_matchday,
+          ):
+              upcoming_matchdays = sorted(
+                  {
+                      match.get("matchday")
+                      for match in matches
+                      if (
+                          match.get("matchday")
+                          is not None
+                          and match.get("status")
+                          in [
+                              "SCHEDULED",
+                              "TIMED",
+                          ]
+                      )
+                  }
+              )
+
+              if current_matchday is not None:
+                  after_current = [
+                      matchday
+                      for matchday
+                      in upcoming_matchdays
+                      if matchday >= current_matchday
+                  ]
+
+                  if after_current:
+                      return min(after_current)
+
+              return (
+                  upcoming_matchdays[0]
+                  if upcoming_matchdays
+                  else None
+              )
 
           result = {
-              "updatedAt": datetime.now(timezone.utc).isoformat(),
+              "updatedAt": datetime.now(
+                  timezone.utc
+              ).isoformat(),
               "source": "football-data.org",
               "competitions": {},
+              "matchDetails": existing_details,
           }
 
+          relevant_match_ids = set()
+          live_match_ids = set()
+
           for code in COMPETITIONS:
-              print(f"Downloading {code}")
-              competition = get_json(f"/competitions/{code}")
-              time.sleep(7)
-              matches = get_json(f"/competitions/{code}/matches")
-              time.sleep(7)
-              standings = get_json(f"/competitions/{code}/standings")
-              time.sleep(7)
-              scorers = get_json(f"/competitions/{code}/scorers?limit=100")
-              time.sleep(7)
+              print("")
+              print(f"Downloading competition {code}")
+
+              competition = get_json(
+                  f"/competitions/{code}"
+              )
+
+              matches_data = get_json(
+                  f"/competitions/{code}/matches"
+              )
+
+              standings = get_json(
+                  f"/competitions/{code}/standings"
+              )
+
+              scorers = get_json(
+                  f"/competitions/{code}/scorers?limit=100"
+              )
+
+              all_matches = matches_data.get(
+                  "matches",
+                  [],
+              )
+
+              current_matchday = (
+                  competition
+                  .get("currentSeason", {})
+                  .get("currentMatchday")
+              )
+
+              last_matchday = get_last_matchday(
+                  all_matches
+              )
+
+              next_matchday = get_next_matchday(
+                  all_matches,
+                  current_matchday,
+              )
+
+              last_matches = [
+                  match
+                  for match in all_matches
+                  if (
+                      match.get("matchday")
+                      == last_matchday
+                      and match.get("status")
+                      == "FINISHED"
+                  )
+              ]
+
+              live_matches = [
+                  match
+                  for match in all_matches
+                  if match.get("status")
+                  in [
+                      "IN_PLAY",
+                      "PAUSED",
+                  ]
+              ]
+
+              next_matches = [
+                  match
+                  for match in all_matches
+                  if (
+                      match.get("matchday")
+                      == next_matchday
+                      and match.get("status")
+                      in [
+                          "SCHEDULED",
+                          "TIMED",
+                      ]
+                  )
+              ]
+
+              selected_matches = (
+                  last_matches
+                  + live_matches
+                  + next_matches
+              )
+
+              unique_matches = {}
+
+              for match in selected_matches:
+                  unique_matches[
+                      str(match["id"])
+                  ] = match
+
+              selected_matches = list(
+                  unique_matches.values()
+              )
+
+              selected_matches.sort(
+                  key=lambda match:
+                      match.get("utcDate", "")
+              )
+
+              for match in (
+                  last_matches
+                  + live_matches
+              ):
+                  relevant_match_ids.add(
+                      str(match["id"])
+                  )
+
+              for match in live_matches:
+                  live_match_ids.add(
+                      str(match["id"])
+                  )
 
               result["competitions"][code] = {
                   "competition": competition,
-                  "matches": matches,
+                  "matches": {
+                      **matches_data,
+                      "matches": selected_matches,
+                  },
+                  "lastMatchday": last_matchday,
+                  "nextMatchday": next_matchday,
+                  "lastMatches": last_matches,
+                  "liveMatches": live_matches,
+                  "nextMatches": next_matches,
                   "standings": standings,
                   "scorers": scorers,
               }
 
-          with OUTPUT.open("w", encoding="utf-8") as file:
-              json.dump(result, file, ensure_ascii=False, separators=(",", ":"))
+              print(
+                  f"{code}: "
+                  f"last={last_matchday}, "
+                  f"live={len(live_matches)}, "
+                  f"next={next_matchday}"
+              )
 
-          print("Football data generated successfully")
+          print("")
+          print(
+              "Relevant match details:",
+              len(relevant_match_ids),
+          )
+
+          for match_id in sorted(
+              relevant_match_ids
+          ):
+              should_download = (
+                  match_id
+                  not in result["matchDetails"]
+                  or match_id
+                  in live_match_ids
+              )
+
+              if not should_download:
+                  print(
+                      f"Match {match_id}: "
+                      "using saved detail"
+                  )
+                  continue
+
+              try:
+                  detail = get_json(
+                      f"/matches/{match_id}"
+                  )
+
+                  result[
+                      "matchDetails"
+                  ][match_id] = detail
+
+                  print(
+                      f"Match {match_id}: "
+                      "detail downloaded"
+                  )
+
+              except Exception as error:
+                  print(
+                      f"Match {match_id}: "
+                      f"detail failed: {error}"
+                  )
+
+          valid_match_ids = {
+              str(match["id"])
+              for competition_data
+              in result[
+                  "competitions"
+              ].values()
+              for match
+              in competition_data
+              .get("matches", {})
+              .get("matches", [])
+          }
+
+          result["matchDetails"] = {
+              match_id: detail
+              for match_id, detail
+              in result[
+                  "matchDetails"
+              ].items()
+              if match_id
+              in valid_match_ids
+          }
+
+          with OUTPUT.open(
+              "w",
+              encoding="utf-8",
+          ) as file:
+              json.dump(
+                  result,
+                  file,
+                  ensure_ascii=False,
+                  separators=(",", ":"),
+              )
+
+          print("")
+          print(
+              "Football data generated successfully"
+          )
+
+          print(
+              "Saved match details:",
+              len(
+                  result[
+                      "matchDetails"
+                  ]
+              ),
+          )
           PYTHON
 
       - name: Verify JSON
-        run: python -m json.tool public/data/index.json > /dev/null
+        run: |
+          python -m json.tool public/data/index.json > /dev/null
+
+          echo "Football JSON is valid"
+          ls -lh public/data/index.json
 
       - name: Commit football data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add public/data/index.json
 
           if git diff --cached --quiet; then
@@ -102,5 +515,7 @@ jobs:
           fi
 
           git commit -m "Update football data"
+
           git pull --rebase origin main
+
           git push origin main

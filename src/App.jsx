@@ -182,9 +182,9 @@ function PenaltyGame() {
   });
 
   const settings = {
-    rookie: { label: "Rookie", reaction: 620, reach: 4.5, error: 24, saveChance: 0.16, description: "Portero lento. Ideal para aprender a colocar los tiros." },
-    professional: { label: "Profesional", reaction: 500, reach: 6.0, error: 18, saveChance: 0.28, description: "Portero equilibrado, pero batible con buenos disparos." },
-    allstar: { label: "All-Star", reaction: 380, reach: 7.5, error: 12, saveChance: 0.42, description: "Más reflejos y alcance, sin ser imposible." },
+    rookie: { label: "Rookie", reaction: 540, reach: 6.2, error: 18, saveChance: 0.30, description: "Sencillo, pero obliga a colocar y medir la potencia." },
+    professional: { label: "Profesional", reaction: 390, reach: 8.6, error: 11, saveChance: 0.55, description: "Equilibrado: los tiros centrados y flojos se pagan." },
+    allstar: { label: "All-Star", reaction: 255, reach: 11.8, error: 5.5, saveChance: 0.82, description: "Muy difícil: necesitas potencia y colocarla cerca de los palos." },
   };
 
   useEffect(() => () => timerRef.current.forEach(clearTimeout), []);
@@ -279,7 +279,10 @@ function PenaltyGame() {
     const projection = Math.max(0.7, Math.min(2.2, (data.start.y - goalY) / travelY));
     const targetX = data.start.x + totalDx * projection;
     const lift = Math.max(0, Math.min(1, (-totalDy - 18) / 55));
-    const targetY = 43 - lift * 30;
+    const power = Math.max(0, Math.min(1.45, speed * 1.35));
+    // La altura depende tanto del recorrido vertical como de la velocidad del flick.
+    // Un gesto demasiado fuerte puede mandar el balón por encima del larguero.
+    const targetY = 43 - lift * 30 - Math.max(0, power - 0.72) * 34;
     resolveShot(targetX, targetY, speed, totalDx);
   }
 
@@ -288,8 +291,9 @@ function PenaltyGame() {
     setPhase("shooting");
     setTrail([]);
 
-    const nearPost = rawX >= 7 && rawX <= 93 && rawY >= 7 && rawY <= 47 &&
-      (rawX < 12 || rawX > 88 || rawY < 11 || rawY > 43);
+    const nearPost = rawX >= 7 && rawX <= 93 && rawY >= 6 && rawY <= 48 &&
+      (rawX < 12 || rawX > 88 || (rawY >= 8 && rawY < 11) || rawY > 43);
+    // La portería ocupa y=11..43. Si rawY < 8 el tiro pasa claramente por encima.
     const inside = rawX >= 12 && rawX <= 88 && rawY >= 11 && rawY <= 43;
     const targetX = Math.max(3, Math.min(97, rawX));
     const targetY = Math.max(5, Math.min(54, rawY));
@@ -297,7 +301,7 @@ function PenaltyGame() {
     const keeperError = (Math.random() * 2 - 1) * config.error;
     const predictedX = Math.max(12, Math.min(88, targetX + keeperError));
     const predictedY = Math.max(13, Math.min(43, targetY + (Math.random() * 2 - 1) * config.error * 0.35));
-    const reactionDelay = Math.max(180, config.reaction - Math.min(80, speed * 55));
+    const reactionDelay = Math.max(110, config.reaction - Math.min(95, speed * 65));
     const ballDuration = Math.max(330, 690 - speed * 280);
 
     later(() => setKeeper({ x: predictedX, y: predictedY, rotate: predictedX < 45 ? -35 : predictedX > 55 ? 35 : 0 }), reactionDelay);
@@ -311,10 +315,10 @@ function PenaltyGame() {
         text = nearPost ? "¡AL PALO!" : "FUERA";
       } else {
         const keeperDistance = Math.hypot(targetX - predictedX, (targetY - predictedY) * 1.35);
-        const effectiveReach = Math.max(2.5, config.reach - Math.min(2.8, speed * 1.25));
-        const cornerFactor = (targetX < 25 || targetX > 75 || targetY < 20) ? 0.55 : 1;
-        const powerFactor = Math.max(0.55, 1 - Math.min(0.35, speed * 0.18));
-        const saveChance = config.saveChance * cornerFactor * powerFactor;
+        const effectiveReach = Math.max(3.2, config.reach - Math.min(3.2, speed * 1.05));
+        const cornerFactor = (targetX < 23 || targetX > 77 || targetY < 19) ? 0.62 : 1;
+        const powerFactor = Math.max(0.62, 1 - Math.min(0.30, speed * 0.15));
+        const saveChance = Math.min(0.94, config.saveChance * cornerFactor * powerFactor);
         if (keeperDistance <= effectiveReach && Math.random() < saveChance) {
           outcome = "save";
           text = "¡PARADÓN!";

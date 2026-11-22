@@ -454,90 +454,68 @@ jobs:
               return summary
 
           def find_last_matchday(matches):
-              summary = (
-                  matchday_summary(
-                      matches
-                  )
-              )
-
-              completed = [
-                  matchday
-                  for matchday, item
-                  in summary.items()
-                  if (
-                      item["finished"] > 0
-                      and item["started"]
-                      == item["total"]
-                  )
-              ]
-
-              if completed:
-                  return max(completed)
-
-              partially_completed = [
+              finished_matchdays = [
                   match.get("matchday")
                   for match in matches
                   if (
-                      match.get("status")
-                      == "FINISHED"
-                      and match.get(
-                          "matchday"
-                      )
-                      is not None
+                      match.get("status") == "FINISHED"
+                      and match.get("matchday") is not None
                   )
               ]
 
               return (
-                  max(
-                      partially_completed
-                  )
-                  if partially_completed
+                  max(finished_matchdays)
+                  if finished_matchdays
                   else None
               )
 
           def find_next_matchday(
               matches,
-              current_matchday,
+              last_matchday,
           ):
-              upcoming = sorted(
-                  {
-                      match.get("matchday")
-                      for match in matches
-                      if (
-                          match.get(
-                              "matchday"
-                          )
-                          is not None
-                          and match.get(
-                              "status"
-                          )
-                          in [
-                              "SCHEDULED",
-                              "TIMED",
-                          ]
-                      )
-                  }
+              pending_by_matchday = {}
+
+              for match in matches:
+                  matchday = match.get("matchday")
+                  status = match.get("status")
+
+                  if (
+                      matchday is None
+                      or status not in [
+                          "SCHEDULED",
+                          "TIMED",
+                      ]
+                  ):
+                      continue
+
+                  pending_by_matchday.setdefault(
+                      matchday,
+                      0,
+                  )
+                  pending_by_matchday[matchday] += 1
+
+              if not pending_by_matchday:
+                  return None
+
+              if (
+                  last_matchday is not None
+                  and last_matchday in pending_by_matchday
+              ):
+                  return last_matchday
+
+              future_matchdays = sorted(
+                  matchday
+                  for matchday in pending_by_matchday
+                  if (
+                      last_matchday is None
+                      or matchday > last_matchday
+                  )
               )
 
-              if current_matchday is not None:
-                  current_or_later = [
-                      matchday
-                      for matchday
-                      in upcoming
-                      if matchday
-                      >= current_matchday
-                  ]
+              if future_matchdays:
+                  return future_matchdays[0]
 
-                  if current_or_later:
-                      return min(
-                          current_or_later
-                      )
-
-              return (
-                  upcoming[0]
-                  if upcoming
-                  else None
-              )
+              return min(pending_by_matchday)
 
           def get_pitch_matches_for_date(
               date_string,
@@ -836,7 +814,7 @@ jobs:
               next_matchday = (
                   find_next_matchday(
                       all_matches,
-                      current_matchday,
+                      last_matchday,
                   )
               )
 
